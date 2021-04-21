@@ -9,38 +9,6 @@ pub struct Repo<'r> {
     history: undo::History<Change<'r>>,
 }
 
-#[derive(Debug, Clone)]
-enum Change<'r> {
-    StageFile(&'r File),
-    UnstageFile(&'r File),
-}
-
-impl<'r> undo::Action for Change<'r> {
-    type Target = RepoInternal;
-    type Output = ();
-    type Error = Error;
-
-    fn apply(&mut self, target: &mut Self::Target) -> undo::Result<Self> {
-        match self {
-            Change::StageFile(file) => target.do_stage_file(file),
-            Change::UnstageFile(file) => target.do_unstage_file(file),
-        }
-    }
-
-    fn undo(&mut self, target: &mut Self::Target) -> undo::Result<Self> {
-        match self {
-            Change::StageFile(file) => target.do_stage_file(file),
-            Change::UnstageFile(file) => target.do_unstage_file(file),
-        }
-    }
-}
-
-impl fmt::Display for Change<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(self, f)
-    }
-}
-
 impl<'r> Repo<'r> {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let internal = RepoInternal::open(path)?;
@@ -76,6 +44,38 @@ impl fmt::Debug for Repo<'_> {
             .field("internal", &self.internal)
             .field("history", &history)
             .finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug, Clone)]
+enum Change<'r> {
+    StageFile(&'r File),
+    UnstageFile(&'r File),
+}
+
+impl<'r> undo::Action for Change<'r> {
+    type Target = RepoInternal;
+    type Output = ();
+    type Error = Error;
+
+    fn apply(&mut self, target: &mut Self::Target) -> undo::Result<Self> {
+        match self {
+            Change::StageFile(file) => target.do_stage_file(file),
+            Change::UnstageFile(file) => target.do_unstage_file(file),
+        }
+    }
+
+    fn undo(&mut self, target: &mut Self::Target) -> undo::Result<Self> {
+        match self {
+            Change::StageFile(file) => target.do_stage_file(file),
+            Change::UnstageFile(file) => target.do_unstage_file(file),
+        }
+    }
+}
+
+impl fmt::Display for Change<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self, f)
     }
 }
 
