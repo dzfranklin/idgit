@@ -105,6 +105,9 @@ impl fmt::Display for Change<'_> {
     }
 }
 
+/// Internal manages everything that doesn't require history. This is so that
+/// actions on the history can mutably borrow something that doesn't contain the
+/// history itself.
 pub(crate) struct RepoInternal {
     git: git2::Repository,
 }
