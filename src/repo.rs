@@ -16,6 +16,28 @@ impl<'r> Repo<'r> {
         Ok(Self { internal, history })
     }
 
+    pub fn can_undo(&self) -> bool {
+        self.history.can_undo()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        self.history.can_redo()
+    }
+
+    pub fn undo(&mut self) -> Result<()> {
+        self.history
+            .undo(&mut self.internal)
+            .ok_or(Error::UndoEmpty)
+            .flatten()
+    }
+
+    pub fn redo(&mut self) -> Result<()> {
+        self.history
+            .redo(&mut self.internal)
+            .ok_or(Error::RedoEmpty)
+            .flatten()
+    }
+
     pub fn path(&self) -> &Path {
         self.internal.path()
     }

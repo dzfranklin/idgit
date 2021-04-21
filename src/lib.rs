@@ -1,4 +1,4 @@
-#![feature(debug_non_exhaustive)]
+#![feature(debug_non_exhaustive, result_flattening)]
 // TODO: clippy::cargo
 #![warn(clippy::all, clippy::pedantic)]
 #![allow(clippy::missing_errors_doc, clippy::must_use_candidate)]
@@ -40,4 +40,8 @@ pub enum Error {
     MissingId(RepoFile),
     /// Error getting metadata for {1:?}
     GetFileMetadata(#[source] io::Error, RepoFile),
+    /// Can't undo from the current point
+    UndoEmpty,
+    /// Can't redo from the current point
+    RedoEmpty,
 }

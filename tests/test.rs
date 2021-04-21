@@ -237,3 +237,67 @@ fn unstage_file() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn undo_redo_stage_file() -> Result<()> {
+    init_logs();
+    let mut dir = SampleRepoDir::new();
+    let mut repo = Repo::open(dir.path())?;
+
+    dir.set_file("f", b"contents");
+    let uncommitted = repo.uncommitted()?;
+    assert_eq!(uncommitted.len(), 1);
+    let file = if let FileDelta::Untracked(file) = &uncommitted[0] {
+        file
+    } else {
+        panic!();
+    };
+
+    repo.stage_file(file)?;
+    assert_matches!(repo.uncommitted()?.as_slice(), [FileDelta::Added(_)]);
+
+    repo.undo()?;
+    assert_matches!(repo.uncommitted()?.as_slice(), [FileDelta::Untracked(_)]);
+
+    repo.redo()?;
+    assert_matches!(repo.uncommitted()?.as_slice(), [FileDelta::Added(_)]);
+
+    Ok(())
+}
+
+#[test]
+fn undo_redo_unstage_file() -> Result<()> {
+    init_logs();
+    let mut dir = SampleRepoDir::new();
+    let mut repo = Repo::open(dir.path())?;
+
+    dir.set_file("f", b"contents");
+    let uncommitted = repo.uncommitted()?;
+    assert_eq!(uncommitted.len(), 1);
+    let file = if let FileDelta::Untracked(file) = &uncommitted[0] {
+        file
+    } else {
+        panic!();
+    };
+
+    repo.stage_file(file)?;
+
+    let uncommitted = repo.uncommitted()?;
+    assert_matches!(uncommitted.as_slice(), [FileDelta::Added(_)]);
+    let file = if let FileDelta::Added(file) = &uncommitted[0] {
+        file
+    } else {
+        panic!();
+    };
+
+    repo.unstage_file(file)?;
+    assert_matches!(repo.uncommitted()?.as_slice(), [FileDelta::Untracked(_)]);
+
+    repo.undo()?;
+    assert_matches!(repo.uncommitted()?.as_slice(), [FileDelta::Added(_)]);
+
+    repo.redo()?;
+    assert_matches!(repo.uncommitted()?.as_slice(), [FileDelta::Untracked(_)]);
+
+    Ok(())
+}
