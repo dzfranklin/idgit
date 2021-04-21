@@ -1,4 +1,4 @@
-#![feature(with_options)]
+#![feature(with_options, assert_matches)]
 
 use idgit::{FileDelta, Repo, Result};
 use rand::Rng;
@@ -159,8 +159,7 @@ fn uncommitted_no_commits_no_untracked() -> Result<()> {
 
     let dir = SampleRepoDir::new();
     let repo = Repo::open(dir.path())?;
-    let uncommitted = repo.uncommitted()?;
-    assert_eq!(uncommitted.len(), 0);
+    assert_eq!(repo.uncommitted()?.len(), 0);
 
     Ok(())
 }
@@ -176,9 +175,11 @@ fn uncommitted_no_commits_with_untracked() -> Result<()> {
 
     let repo = Repo::open(dir.path())?;
 
-    let uncommitted = repo.uncommitted()?;
-    assert_eq!(uncommitted.len(), 2);
-    matches!(&uncommitted[0], FileDelta::Untracked(f) if f.rel_path().unwrap().to_str().unwrap() == "contents");
+    assert_matches!(repo.uncommitted()?.as_slice(), [
+        FileDelta::Untracked(a), FileDelta::Untracked(b)] if
+            a.rel_path().unwrap().to_str().unwrap() == "example_dir/" &&
+            b.rel_path().unwrap().to_str().unwrap() == "name"
+    );
 
     Ok(())
 }
@@ -203,17 +204,10 @@ fn stage_file() -> Result<()> {
 
     repo.stage_file(&first_file)?;
 
-    let mut untracked = 0;
-    let mut added = 0;
-    for file in repo.uncommitted()? {
-        match file {
-            FileDelta::Added(file) => added += 1,
-            FileDelta::Untracked(file) => untracked += 1,
-            _ => panic!("Expected only added or untracked"),
-        }
-    }
-    assert_eq!(untracked, 1);
-    assert_eq!(added, 1);
+    assert_matches!(
+        repo.uncommitted()?.as_slice(),
+        [FileDelta::Added(_), FileDelta::Untracked(_)]
+    );
 
     Ok(())
 }
