@@ -67,8 +67,8 @@ impl<'r> undo::Action for Change<'r> {
 
     fn undo(&mut self, target: &mut Self::Target) -> undo::Result<Self> {
         match self {
-            Change::StageFile(file) => target.do_stage_file(file),
-            Change::UnstageFile(file) => target.do_unstage_file(file),
+            Change::StageFile(file) => target.do_unstage_file(file),
+            Change::UnstageFile(file) => target.do_stage_file(file),
         }
     }
 }
