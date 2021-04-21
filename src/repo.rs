@@ -142,7 +142,8 @@ impl RepoInternal {
     }
 
     fn do_unstage_file(&self, file: &File) -> Result<()> {
-        todo!();
+        let path = file.rel_path_required()?;
+        self.git.index()?.remove_path(path)?;
         Ok(())
     }
 }

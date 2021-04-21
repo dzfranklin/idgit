@@ -211,3 +211,29 @@ fn stage_file() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn unstage_file() -> Result<()> {
+    init_logs();
+    let mut dir = SampleRepoDir::new();
+    let mut repo = Repo::open(dir.path())?;
+
+    dir.set_file("f", b"contents");
+    let uncommitted = repo.uncommitted()?;
+    assert_eq!(uncommitted.len(), 1);
+    let file = if let FileDelta::Untracked(file) = &uncommitted[0] {
+        file
+    } else {
+        panic!();
+    };
+
+    repo.stage_file(file)?;
+
+    assert_matches!(repo.uncommitted()?.as_slice(), [FileDelta::Added(_)]);
+
+    repo.unstage_file(file)?;
+
+    assert_matches!(repo.uncommitted()?.as_slice(), [FileDelta::Untracked(_)]);
+
+    Ok(())
+}
