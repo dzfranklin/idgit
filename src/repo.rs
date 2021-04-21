@@ -1,6 +1,6 @@
-use std::{ffi::OsString, fmt, fs, path::Path, str::FromStr};
+use std::{fmt, path::Path};
 
-use crate::{file::File, Error, FileDelta, Result};
+use crate::{diff, file::File, Error, Result};
 #[allow(unused)]
 use tracing::{debug, error, info, instrument, span, warn};
 
@@ -42,8 +42,12 @@ impl<'r> Repo<'r> {
         self.internal.path()
     }
 
-    pub fn uncommitted(&self) -> Result<Vec<FileDelta>> {
-        self.internal.uncommitted()
+    pub fn uncommitted_files(&self) -> Result<Vec<diff::Meta>> {
+        self.internal.uncommitted_files()
+    }
+
+    pub fn diff_details(&self, diff: &diff::Meta) -> Result<diff::Details> {
+        self.internal.diff_details(diff)
     }
 
     pub fn stage_file(&mut self, file: &'r File) -> Result<()> {
@@ -120,21 +124,108 @@ impl RepoInternal {
         }
     }
 
-    fn head_is_unborn(&self) -> bool {
-        if let Err(err) = self.git.head() {
-            err.code() == git2::ErrorCode::UnbornBranch
-        } else {
-            false
+    fn head_assuming_born(&self) -> std::result::Result<git2::Tree, git2::Error> {
+        self.git.head()?.peel_to_commit()?.tree()
+    }
+
+    fn head(&self) -> Result<Option<git2::Tree>> {
+        match self.head_assuming_born() {
+            Ok(head) => Ok(Some(head)),
+            Err(err) if err.code() == git2::ErrorCode::UnbornBranch => Ok(None),
+            Err(err) => Err(err.into()),
         }
     }
 
-    fn uncommitted(&self) -> Result<Vec<FileDelta>> {
-        let head = if self.head_is_unborn() {
-            None
-        } else {
-            Some(self.git.head()?.peel_to_commit()?.tree()?)
+    fn uncommitted_files(&self) -> Result<Vec<diff::Meta>> {
+        let head = self.head()?;
+        let mut opts = Self::uncommitted_opts();
+
+        let deltas = self
+            .git
+            .diff_tree_to_workdir_with_index(head.as_ref(), Some(&mut opts))?
+            .deltas()
+            .map(|delta| diff::Meta::from_git2(&delta))
+            .collect();
+
+        Ok(deltas)
+    }
+
+    fn diff_details(&self, meta: &diff::Meta) -> Result<diff::Details> {
+        match meta {
+            crate::Meta::Added(f)
+            | crate::Meta::Deleted(f)
+            | crate::Meta::Modified { new: f, .. }
+            | crate::Meta::Renamed { new: f, .. }
+            | crate::Meta::Copied { new: f, .. }
+            | crate::Meta::Ignored(f)
+            | crate::Meta::Untracked(f)
+            | crate::Meta::Typechange { new: f, .. }
+            | crate::Meta::Unreadable(f)
+            | crate::Meta::Conflicted { new: f, .. } => {
+                let path = f.rel_path_required()?;
+                self._diff_details(path)
+            }
+        }
+    }
+
+    fn _diff_details(&self, path: &Path) -> Result<diff::Details> {
+        let head = self.head()?;
+
+        let mut opts = Self::uncommitted_opts();
+        opts.pathspec(path);
+
+        let mut meta: Option<diff::Meta> = None;
+        let mut file_cb = |delta: git2::DiffDelta<'_>, _progress| {
+            if let Some(delta_path) = Self::delta_path(&delta) {
+                if delta_path == path {
+                    meta = Some(diff::Meta::from_git2(&delta));
+                    return true;
+                }
+            }
+
+            // NOTE: If we ask to stop once we get the target lines_cb isn't
+            // called, so we exit on the first subsequent delta.
+
+            meta.is_none()
         };
 
+        let mut lines = vec![];
+        let mut line_cb = |delta: git2::DiffDelta<'_>,
+                           _hunk: Option<git2::DiffHunk<'_>>,
+                           line: git2::DiffLine<'_>| {
+            if let Some(delta_path) = Self::delta_path(&delta) {
+                if delta_path == path {
+                    let line = diff::Line::from_git2(&line);
+                    lines.push(line);
+                }
+            }
+
+            true
+        };
+
+        match self
+            .git
+            .diff_tree_to_workdir_with_index(head.as_ref(), Some(&mut opts))?
+            .foreach(&mut file_cb, None, None, Some(&mut line_cb))
+        {
+            Ok(()) => (),
+            Err(err) if err.code() == git2::ErrorCode::User => (),
+            Err(err) => return Err(err.into()),
+        }
+
+        let meta = meta.ok_or_else(|| Error::PathNotFound(path.to_path_buf()))?;
+
+        Ok(diff::Details::new(meta, lines))
+    }
+
+    fn delta_path<'a, 'b>(delta: &'a git2::DiffDelta<'b>) -> Option<&'b Path> {
+        delta
+            .new_file()
+            .path()
+            .map_or_else(|| delta.old_file().path(), |delta_path| Some(delta_path))
+    }
+
+    fn uncommitted_opts() -> git2::DiffOptions {
         let mut opts = git2::DiffOptions::new();
         opts.include_untracked(true)
             .include_typechange(true)
@@ -142,15 +233,7 @@ impl RepoInternal {
             .include_unreadable(true)
             .include_untracked(true)
             .include_ignored(true);
-
-        let deltas = self
-            .git
-            .diff_tree_to_workdir_with_index(head.as_ref(), Some(&mut opts))?
-            .deltas()
-            .map(|delta| FileDelta::from_git2(&delta))
-            .collect();
-
-        Ok(deltas)
+        opts
     }
 
     fn do_stage_file(&self, file: &File) -> Result<()> {

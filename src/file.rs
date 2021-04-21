@@ -1,9 +1,5 @@
 use crate::{Error, Repo, Result};
-use std::{
-    convert::TryInto,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use crate::RepoInternal;
 
@@ -40,6 +36,10 @@ impl File {
 
     pub fn abs_path(&self, repo: &Repo) -> Option<PathBuf> {
         self.abs_path_int(&repo.internal)
+    }
+
+    pub(crate) fn id_required(&self) -> Result<git2::Oid> {
+        self.id().ok_or_else(|| Error::MissingId(self.clone()))
     }
 
     pub(crate) fn rel_path_required(&self) -> Result<&Path> {

@@ -16,13 +16,13 @@ mod diff;
 mod file;
 mod repo;
 
-pub use diff::FileDelta;
+pub use diff::Meta;
 pub use file::File as RepoFile;
 pub use repo::Repo;
 
 use repo::RepoInternal;
 
-use std::io;
+use std::{io, path::PathBuf};
 #[allow(unused)]
 use tracing::{debug, error, info, instrument, span, warn};
 
@@ -44,4 +44,6 @@ pub enum Error {
     UndoEmpty,
     /// Can't redo from the current point
     RedoEmpty,
+    /// Expected to find something at {0}
+    PathNotFound(PathBuf),
 }

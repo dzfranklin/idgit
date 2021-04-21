@@ -1,6 +1,6 @@
 #![feature(with_options, assert_matches)]
 
-use idgit::{FileDelta, Repo, Result};
+use idgit::{Meta, Repo, Result};
 use rand::Rng;
 use std::{
     fs::{self, File},
@@ -61,7 +61,7 @@ impl SampleRepoDir {
             .unwrap();
     }
 
-    fn delete_file<N: AsRef<Path>>(&mut self, name: N) {
+    fn remove_file<N: AsRef<Path>>(&mut self, name: N) {
         fs::remove_file(self.path().join(name)).unwrap();
     }
 
@@ -123,7 +123,7 @@ fn can_open_used() -> Result<()> {
 }
 
 #[test]
-fn uncommitted() -> Result<()> {
+fn uncommitted_files() -> Result<()> {
     init_logs();
 
     let mut dir = SampleRepoDir::new();
@@ -138,7 +138,7 @@ fn uncommitted() -> Result<()> {
 
     dir.set_file("example.ignored", b"ignored");
 
-    dir.delete_file("deleted.txt");
+    dir.remove_file("deleted.txt");
 
     dir.set_file("staged.txt", b"already staged");
     dir.add("staged.txt");
@@ -148,7 +148,7 @@ fn uncommitted() -> Result<()> {
 
     dir.create_dir("example_dir");
 
-    debug!("{:#?}", repo.uncommitted()?);
+    debug!("{:#?}", repo.uncommitted_files()?);
 
     Ok(())
 }
@@ -159,7 +159,7 @@ fn uncommitted_no_commits_no_untracked() -> Result<()> {
 
     let dir = SampleRepoDir::new();
     let repo = Repo::open(dir.path())?;
-    assert_eq!(repo.uncommitted()?.len(), 0);
+    assert_eq!(repo.uncommitted_files()?.len(), 0);
 
     Ok(())
 }
@@ -175,8 +175,8 @@ fn uncommitted_no_commits_with_untracked() -> Result<()> {
 
     let repo = Repo::open(dir.path())?;
 
-    assert_matches!(repo.uncommitted()?.as_slice(), [
-        FileDelta::Untracked(a), FileDelta::Untracked(b)] if
+    assert_matches!(repo.uncommitted_files()?.as_slice(), [
+        Meta::Untracked(a), Meta::Untracked(b)] if
             a.rel_path().unwrap().to_str().unwrap() == "example_dir/" &&
             b.rel_path().unwrap().to_str().unwrap() == "name"
     );
@@ -195,8 +195,8 @@ fn stage_file() -> Result<()> {
 
     let mut repo = Repo::open(dir.path())?;
 
-    let uncommitted = repo.uncommitted()?;
-    let first_file = if let FileDelta::Untracked(file) = &uncommitted[0] {
+    let uncommitted = repo.uncommitted_files()?;
+    let first_file = if let Meta::Untracked(file) = &uncommitted[0] {
         file
     } else {
         panic!();
@@ -205,8 +205,8 @@ fn stage_file() -> Result<()> {
     repo.stage_file(&first_file)?;
 
     assert_matches!(
-        repo.uncommitted()?.as_slice(),
-        [FileDelta::Added(_), FileDelta::Untracked(_)]
+        repo.uncommitted_files()?.as_slice(),
+        [Meta::Added(_), Meta::Untracked(_)]
     );
 
     Ok(())
@@ -219,9 +219,9 @@ fn unstage_file() -> Result<()> {
     let mut repo = Repo::open(dir.path())?;
 
     dir.set_file("f", b"contents");
-    let uncommitted = repo.uncommitted()?;
+    let uncommitted = repo.uncommitted_files()?;
     assert_eq!(uncommitted.len(), 1);
-    let file = if let FileDelta::Untracked(file) = &uncommitted[0] {
+    let file = if let Meta::Untracked(file) = &uncommitted[0] {
         file
     } else {
         panic!();
@@ -229,11 +229,11 @@ fn unstage_file() -> Result<()> {
 
     repo.stage_file(file)?;
 
-    assert_matches!(repo.uncommitted()?.as_slice(), [FileDelta::Added(_)]);
+    assert_matches!(repo.uncommitted_files()?.as_slice(), [Meta::Added(_)]);
 
     repo.unstage_file(file)?;
 
-    assert_matches!(repo.uncommitted()?.as_slice(), [FileDelta::Untracked(_)]);
+    assert_matches!(repo.uncommitted_files()?.as_slice(), [Meta::Untracked(_)]);
 
     Ok(())
 }
@@ -245,22 +245,22 @@ fn undo_redo_stage_file() -> Result<()> {
     let mut repo = Repo::open(dir.path())?;
 
     dir.set_file("f", b"contents");
-    let uncommitted = repo.uncommitted()?;
+    let uncommitted = repo.uncommitted_files()?;
     assert_eq!(uncommitted.len(), 1);
-    let file = if let FileDelta::Untracked(file) = &uncommitted[0] {
+    let file = if let Meta::Untracked(file) = &uncommitted[0] {
         file
     } else {
         panic!();
     };
 
     repo.stage_file(file)?;
-    assert_matches!(repo.uncommitted()?.as_slice(), [FileDelta::Added(_)]);
+    assert_matches!(repo.uncommitted_files()?.as_slice(), [Meta::Added(_)]);
 
     repo.undo()?;
-    assert_matches!(repo.uncommitted()?.as_slice(), [FileDelta::Untracked(_)]);
+    assert_matches!(repo.uncommitted_files()?.as_slice(), [Meta::Untracked(_)]);
 
     repo.redo()?;
-    assert_matches!(repo.uncommitted()?.as_slice(), [FileDelta::Added(_)]);
+    assert_matches!(repo.uncommitted_files()?.as_slice(), [Meta::Added(_)]);
 
     Ok(())
 }
@@ -272,9 +272,9 @@ fn undo_redo_unstage_file() -> Result<()> {
     let mut repo = Repo::open(dir.path())?;
 
     dir.set_file("f", b"contents");
-    let uncommitted = repo.uncommitted()?;
+    let uncommitted = repo.uncommitted_files()?;
     assert_eq!(uncommitted.len(), 1);
-    let file = if let FileDelta::Untracked(file) = &uncommitted[0] {
+    let file = if let Meta::Untracked(file) = &uncommitted[0] {
         file
     } else {
         panic!();
@@ -282,22 +282,77 @@ fn undo_redo_unstage_file() -> Result<()> {
 
     repo.stage_file(file)?;
 
-    let uncommitted = repo.uncommitted()?;
-    assert_matches!(uncommitted.as_slice(), [FileDelta::Added(_)]);
-    let file = if let FileDelta::Added(file) = &uncommitted[0] {
+    let uncommitted = repo.uncommitted_files()?;
+    assert_matches!(uncommitted.as_slice(), [Meta::Added(_)]);
+    let file = if let Meta::Added(file) = &uncommitted[0] {
         file
     } else {
         panic!();
     };
 
     repo.unstage_file(file)?;
-    assert_matches!(repo.uncommitted()?.as_slice(), [FileDelta::Untracked(_)]);
+    assert_matches!(repo.uncommitted_files()?.as_slice(), [Meta::Untracked(_)]);
 
     repo.undo()?;
-    assert_matches!(repo.uncommitted()?.as_slice(), [FileDelta::Added(_)]);
+    assert_matches!(repo.uncommitted_files()?.as_slice(), [Meta::Added(_)]);
 
     repo.redo()?;
-    assert_matches!(repo.uncommitted()?.as_slice(), [FileDelta::Untracked(_)]);
+    assert_matches!(repo.uncommitted_files()?.as_slice(), [Meta::Untracked(_)]);
+
+    Ok(())
+}
+
+#[test]
+fn uncommitted_change() -> Result<()> {
+    init_logs();
+    let mut dir = SampleRepoDir::new();
+    let repo = Repo::open(&dir.path())?;
+
+    let old = b"
+         fn undo(&mut self, target: &mut Self::Target) -> undo::Result<Self> {
+            match self {
+                Change::StageFile(file) => target.do_stage_file(file),
+                Change::UnstageFile(file) => target.do_unstage_file(file),
+            }
+         }
+    ";
+
+    let new = b"
+         fn undo(&mut self, target: &mut Self::Target) -> undo::Result<Self> {
+            match self {
+                Change::StageFile(file) => target.do_unstage_file(file),
+                Change::UnstageFile(file) => target.do_stage_file(file),
+            }
+         }
+    ";
+
+    dir.set_file("file", old);
+    dir.commit_all();
+    dir.set_file("file", new);
+
+    let uncommitted = repo.uncommitted_files()?;
+    let diff = &uncommitted[0];
+
+    let changes = repo.diff_details(diff)?;
+    debug!(?changes);
+
+    Ok(())
+}
+
+#[test]
+fn uncommitted_change_for_nonexistent_errors() -> Result<()> {
+    init_logs();
+    let mut dir = SampleRepoDir::new();
+    let repo = Repo::open(&dir.path())?;
+
+    dir.set_file("file", b"contents");
+
+    let uncommitted = repo.uncommitted_files()?;
+
+    dir.remove_file("file");
+
+    let delta = &uncommitted[0];
+    assert_matches!(repo.diff_details(delta), Err(idgit::Error::PathNotFound(_)));
 
     Ok(())
 }
