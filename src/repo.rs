@@ -5,13 +5,13 @@ use crate::{diff, file::File, Error, Result};
 use tracing::{debug, error, info, instrument, span, warn};
 
 pub struct Repo<'r> {
-    pub(crate) internal: RepoInternal,
+    pub(crate) internal: Internal,
     history: undo::History<Change<'r>>,
 }
 
 impl<'r> Repo<'r> {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let internal = RepoInternal::open(path)?;
+        let internal = Internal::open(path)?;
         let history = undo::History::new();
         Ok(Self { internal, history })
     }
@@ -80,21 +80,21 @@ enum Change<'r> {
 }
 
 impl<'r> undo::Action for Change<'r> {
-    type Target = RepoInternal;
+    type Target = Internal;
     type Output = ();
     type Error = Error;
 
     fn apply(&mut self, target: &mut Self::Target) -> undo::Result<Self> {
         match self {
-            Change::StageFile(file) => target.do_stage_file(file),
-            Change::UnstageFile(file) => target.do_unstage_file(file),
+            Change::StageFile(file) => target.stage_file(file),
+            Change::UnstageFile(file) => target.unstage_file(file),
         }
     }
 
     fn undo(&mut self, target: &mut Self::Target) -> undo::Result<Self> {
         match self {
-            Change::StageFile(file) => target.do_unstage_file(file),
-            Change::UnstageFile(file) => target.do_stage_file(file),
+            Change::StageFile(file) => target.unstage_file(file),
+            Change::UnstageFile(file) => target.stage_file(file),
         }
     }
 }
@@ -108,11 +108,11 @@ impl fmt::Display for Change<'_> {
 /// Internal manages everything that doesn't require history. This is so that
 /// actions on the history can mutably borrow something that doesn't contain the
 /// history itself.
-pub(crate) struct RepoInternal {
+pub(crate) struct Internal {
     git: git2::Repository,
 }
 
-impl RepoInternal {
+impl Internal {
     fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let git = git2::Repository::open(path)?;
         Ok(Self { git })
@@ -239,7 +239,7 @@ impl RepoInternal {
         opts
     }
 
-    fn do_stage_file(&self, file: &File) -> Result<()> {
+    fn stage_file(&self, file: &File) -> Result<()> {
         let path = file.rel_path_required()?;
         if self.git.status_should_ignore(path)? {
             debug!("Ignoring {:?}", file);
@@ -249,14 +249,14 @@ impl RepoInternal {
         Ok(())
     }
 
-    fn do_unstage_file(&self, file: &File) -> Result<()> {
+    fn unstage_file(&self, file: &File) -> Result<()> {
         let path = file.rel_path_required()?;
         self.git.index()?.remove_path(path)?;
         Ok(())
     }
 }
 
-impl fmt::Debug for RepoInternal {
+impl fmt::Debug for Internal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RepoInternal")
             .field("path", &self.git.path())

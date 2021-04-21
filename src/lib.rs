@@ -20,8 +20,6 @@ pub use diff::Meta;
 pub use file::File as RepoFile;
 pub use repo::Repo;
 
-use repo::RepoInternal;
-
 use std::{io, path::PathBuf};
 #[allow(unused)]
 use tracing::{debug, error, info, instrument, span, warn};

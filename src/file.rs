@@ -1,7 +1,7 @@
 use crate::{Error, Repo, Result};
 use std::path::{Path, PathBuf};
 
-use crate::RepoInternal;
+use crate::repo;
 
 #[derive(Debug, Clone)]
 pub struct File {
@@ -35,7 +35,7 @@ impl File {
     }
 
     pub fn abs_path(&self, repo: &Repo) -> Option<PathBuf> {
-        self.abs_path_int(&repo.internal)
+        self._abs_path(&repo.internal)
     }
 
     pub(crate) fn id_required(&self) -> Result<git2::Oid> {
@@ -47,7 +47,7 @@ impl File {
             .ok_or_else(|| Error::MissingPath(self.clone()))
     }
 
-    pub(crate) fn abs_path_int(&self, repo: &RepoInternal) -> Option<PathBuf> {
+    pub(crate) fn _abs_path(&self, repo: &repo::Internal) -> Option<PathBuf> {
         self.rel_path.as_ref().map(|rel| repo.path().join(rel))
     }
 }
